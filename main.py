@@ -28,8 +28,24 @@ def join_and_analyze_tables(usage_df, spec_df, essentials_count, specialization_
             
             if 'Enrollment Time' in filtered_usage.columns:
                 filtered_usage['Enrollment Time'] = pd.to_datetime(filtered_usage['Enrollment Time'], errors='coerce')
-                cutoff_date = pd.Timestamp('2025-01-01', tz='UTC')
-                filtered_usage = filtered_usage[filtered_usage['Enrollment Time'] >= cutoff_date]
+                
+                # Create cutoff date - start with naive datetime
+                cutoff_date = pd.Timestamp('2025-01-01')
+                
+                # Handle timezone compatibility
+                try:
+                    # First, try the comparison as-is (works if both are naive or both have same timezone)
+                    filtered_usage = filtered_usage[filtered_usage['Enrollment Time'] >= cutoff_date]
+                except TypeError:
+                    # If comparison fails, try to make them compatible
+                    if filtered_usage['Enrollment Time'].dt.tz is not None:
+                        # Data is timezone-aware, make cutoff timezone-aware
+                        cutoff_date = cutoff_date.tz_localize('UTC')
+                    else:
+                        # Data is timezone-naive, ensure cutoff is also naive
+                        cutoff_date = cutoff_date.tz_localize(None) if cutoff_date.tz is not None else cutoff_date
+                    
+                    filtered_usage = filtered_usage[filtered_usage['Enrollment Time'] >= cutoff_date]
             
             if 'Completed' in filtered_usage.columns:
                 filtered_usage = filtered_usage[filtered_usage['Completed'] == 'Yes']
@@ -48,8 +64,24 @@ def join_and_analyze_tables(usage_df, spec_df, essentials_count, specialization_
             # Apply filters
             if 'Enrollment Time' in filtered_spec.columns:
                 filtered_spec['Enrollment Time'] = pd.to_datetime(filtered_spec['Enrollment Time'], errors='coerce')
-                cutoff_date = pd.Timestamp('2025-01-01', tz='UTC')
-                filtered_spec = filtered_spec[filtered_spec['Enrollment Time'] >= cutoff_date]
+                
+                # Create cutoff date - start with naive datetime
+                cutoff_date = pd.Timestamp('2025-01-01')
+                
+                # Handle timezone compatibility
+                try:
+                    # First, try the comparison as-is (works if both are naive or both have same timezone)
+                    filtered_spec = filtered_spec[filtered_spec['Enrollment Time'] >= cutoff_date]
+                except TypeError:
+                    # If comparison fails, try to make them compatible
+                    if filtered_spec['Enrollment Time'].dt.tz is not None:
+                        # Data is timezone-aware, make cutoff timezone-aware
+                        cutoff_date = cutoff_date.tz_localize('UTC')
+                    else:
+                        # Data is timezone-naive, ensure cutoff is also naive
+                        cutoff_date = cutoff_date.tz_localize(None) if cutoff_date.tz is not None else cutoff_date
+                    
+                    filtered_spec = filtered_spec[filtered_spec['Enrollment Time'] >= cutoff_date]
             
             if 'Completed' in filtered_spec.columns:
                 filtered_spec = filtered_spec[filtered_spec['Completed'] == 'Yes']

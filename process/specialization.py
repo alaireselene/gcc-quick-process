@@ -19,10 +19,27 @@ def process_specialization_certificates(df):
             # Convert enrollment time to datetime
             filtered_df = filtered_df.copy()  # Avoid SettingWithCopyWarning
             filtered_df['Enrollment Time'] = pd.to_datetime(filtered_df['Enrollment Time'], errors='coerce')
-            # Use timezone-aware cutoff date to match the data format
-            cutoff_date = pd.Timestamp('2025-01-01', tz='UTC')
-            date_filter = filtered_df['Enrollment Time'] >= cutoff_date
-            filtered_df = filtered_df[date_filter]
+            
+            # Create cutoff date - start with naive datetime
+            cutoff_date = pd.Timestamp('2025-01-01')
+            
+            # Handle timezone compatibility
+            try:
+                # First, try the comparison as-is (works if both are naive or both have same timezone)
+                date_filter = filtered_df['Enrollment Time'] >= cutoff_date
+                filtered_df = filtered_df[date_filter]
+            except TypeError:
+                # If comparison fails, try to make them compatible
+                if filtered_df['Enrollment Time'].dt.tz is not None:
+                    # Data is timezone-aware, make cutoff timezone-aware
+                    cutoff_date = cutoff_date.tz_localize('UTC')
+                else:
+                    # Data is timezone-naive, ensure cutoff is also naive
+                    cutoff_date = cutoff_date.tz_localize(None) if cutoff_date.tz is not None else cutoff_date
+                
+                date_filter = filtered_df['Enrollment Time'] >= cutoff_date
+                filtered_df = filtered_df[date_filter]
+            
             st.write(f"**After Date filter:** {len(filtered_df)} rows (Enrollment Time >= Jan 01, 2025)")
         else:
             st.warning("⚠️ 'Enrollment Time' column not found in the data")
