@@ -127,6 +127,44 @@ def join_and_analyze_tables(usage_df, spec_df, essentials_count, specialization_
                     st.metric("Avg Certificates per Learner", avg_certs_per_learner)
                 else:
                     st.metric("Avg Certificates per Learner", 0)
+
+            # Table 4: Name, Email, Total course/spec number (sorted descending by total, grouped by Email)
+            st.subheader("📘 Table 4: Learners by total Course/Specs")
+            try:
+                # Ensure email is lowercase for grouping consistency
+                t3 = table3.copy()
+                if 'Email' in t3.columns:
+                    t3['Email'] = t3['Email'].astype(str).str.strip().str.lower()
+                # Derive a representative Name per email: most frequent Name, fallback to first non-null
+                if 'Name' in t3.columns:
+                    name_per_email = (
+                        t3
+                        .groupby('Email')['Name']
+                        .agg(lambda s: s.mode().iat[0] if not s.mode().empty else s.dropna().iat[0] if not s.dropna().empty else None)
+                        .reset_index()
+                    )
+                else:
+                    name_per_email = t3[['Email']].drop_duplicates().copy()
+                    name_per_email['Name'] = None
+
+                counts = (
+                    t3
+                    .groupby(["Email"], dropna=False)
+                    .size()
+                    .reset_index(name="Total course/spec number")
+                )
+
+                table4 = (
+                    counts
+                    .merge(name_per_email, on='Email', how='left')
+                    [["Name", "Email", "Total course/spec number"]]
+                    .sort_values(by="Total course/spec number", ascending=False)
+                    .reset_index(drop=True)
+                )
+                st.write("Sorted in decreasing order by total")
+                st.dataframe(table4)
+            except Exception as e:
+                st.warning(f"⚠️ Could not build Table 4: {e}")
         
         else:
             st.warning("⚠️ No data available for combined analysis")

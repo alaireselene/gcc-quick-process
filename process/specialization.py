@@ -82,6 +82,9 @@ def process_gcc_specialization_file(uploaded_file):
     try:
         # Read the CSV file
         df = pd.read_csv(uploaded_file, encoding='utf-8')
+        # Normalize emails early to avoid case-sensitivity issues
+        if 'Email' in df.columns:
+            df['Email'] = df['Email'].astype(str).str.strip().str.lower()
         
         st.success(f"✅ Successfully loaded GCC Specialization file with {len(df)} rows and {len(df.columns)} columns")
         
