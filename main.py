@@ -154,15 +154,37 @@ def join_and_analyze_tables(usage_df, spec_df, essentials_count, specialization_
                     .reset_index(name="Total course/spec number")
                 )
 
+                # Aggregate list of courses/specs per email (distinct, preserve appearance order)
+                if 'Course/Specs' in t3.columns:
+                    courses_per_email = (
+                        t3
+                        .groupby('Email')['Course/Specs']
+                        .agg(lambda s: '\n'.join(list(dict.fromkeys([str(x) for x in s.dropna().tolist()]))))
+                        .reset_index()
+                        .rename(columns={"Course/Specs": "Courses/Specs list"})
+                    )
+                else:
+                    courses_per_email = name_per_email[['Email']].copy()
+                    courses_per_email['Courses/Specs list'] = ''
+
                 table4 = (
                     counts
                     .merge(name_per_email, on='Email', how='left')
-                    [["Name", "Email", "Total course/spec number"]]
+                    .merge(courses_per_email, on='Email', how='left')
+                    [["Name", "Email", "Total course/spec number", "Courses/Specs list"]]
                     .sort_values(by="Total course/spec number", ascending=False)
                     .reset_index(drop=True)
                 )
                 st.write("Sorted in decreasing order by total")
-                st.dataframe(table4)
+                # Option to render with wrapped lines (HTML) or as a standard dataframe
+                wrap_view = st.toggle("Wrap Courses/Specs list", value=True, key="wrap_courses_specs_list")
+                if wrap_view:
+                    # Convert newlines to <br> for HTML rendering and show as Markdown table
+                    html_df = table4.copy()
+                    html_df['Courses/Specs list'] = html_df['Courses/Specs list'].astype(str).str.replace('\n', '<br>')
+                    st.markdown(html_df.to_html(escape=False, index=False), unsafe_allow_html=True)
+                else:
+                    st.dataframe(table4, use_container_width=True)
             except Exception as e:
                 st.warning(f"⚠️ Could not build Table 4: {e}")
         
