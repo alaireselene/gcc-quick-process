@@ -4,160 +4,174 @@ import pandas as pd
 from process.ai_essential import process_gcc_usage_report
 from process.specialization import process_gcc_specialization_file
 
-def join_and_analyze_tables(usage_df, spec_df, essentials_count, specialization_count):
+def join_and_analyze_tables(usage_df, spec_df):
     """
     Join the filtered tables and analyze unique learners
     """
     try:
         st.markdown("---")
-        st.header("📊 Step 2: Combined Analysis")
-        
-        # Calculate and show total certificates
-        total_certificates = essentials_count + specialization_count
-        st.success(f"🎯 **Total Certificates: {total_certificates}** ({essentials_count} AI Essentials + {specialization_count} Specialization)")
-        
+        st.header("Step 2: Combined Analysis")
+
         # Create Table 1: Filtered AI Essentials (Name, Email, Course)
         table1 = None
-        if usage_df is not None and essentials_count > 0:
-            # Filter the usage_df with the same criteria as in ai_essential.py
+        if usage_df is not None:
             filtered_usage = usage_df.copy()
-            
+
             # Apply filters
             if 'Course' in filtered_usage.columns:
                 filtered_usage = filtered_usage[filtered_usage['Course'] == 'Google AI Essentials']
-            
-            if 'Enrollment Time' in filtered_usage.columns:
-                filtered_usage['Enrollment Time'] = pd.to_datetime(filtered_usage['Enrollment Time'], errors='coerce')
-                
-                # Create cutoff date - start with naive datetime
-                cutoff_date = pd.Timestamp('2025-01-01')
-                
-                # Handle timezone compatibility
-                try:
-                    # First, try the comparison as-is (works if both are naive or both have same timezone)
-                    filtered_usage = filtered_usage[filtered_usage['Enrollment Time'] >= cutoff_date]
-                except TypeError:
-                    # If comparison fails, try to make them compatible
-                    if filtered_usage['Enrollment Time'].dt.tz is not None:
-                        # Data is timezone-aware, make cutoff timezone-aware
-                        cutoff_date = cutoff_date.tz_localize('UTC')
-                    else:
-                        # Data is timezone-naive, ensure cutoff is also naive
-                        cutoff_date = cutoff_date.tz_localize(None) if cutoff_date.tz is not None else cutoff_date
-                    
-                    filtered_usage = filtered_usage[filtered_usage['Enrollment Time'] >= cutoff_date]
-            
+
+            # We will use unified 'Completion Time' for downstream logic
+            # Ensure 'Completion Time' exists (AI Essentials already has it)
+
             if 'Completed' in filtered_usage.columns:
                 filtered_usage = filtered_usage[filtered_usage['Completed'] == 'Yes']
-            
-            # Create Table 1 with Name, Email, Course
+
+            # Create Table 1 with Name, Email, Course/Specs (with completion date), Last Activity Time
             if len(filtered_usage) > 0:
-                table1 = filtered_usage[['Name', 'Email', 'Course']].copy()
-                table1.rename(columns={'Course': 'Course/Specs'}, inplace=True)
-        
+                # Build Course/Specs with appended completion date if available
+                if 'Course' in filtered_usage.columns:
+                    course_specs = filtered_usage['Course'].astype(str)
+                    # Use unified 'Completion Time'
+                    comp = pd.to_datetime(filtered_usage.get('Completion Time'), errors='coerce', utc=True)
+                    comp_str = comp.dt.strftime('%d/%m/%Y')
+                    comp_str = comp_str.where(comp.notna(), '')
+                    course_specs = course_specs + comp_str.apply(lambda s: f" ({s})" if s else "")
+                    filtered_usage['Course/Specs'] = course_specs
+                # Carry unified 'Completion Time'
+                cols1 = [c for c in ['Name', 'Email', 'Course/Specs', 'Completion Time'] if c in filtered_usage.columns]
+                table1 = filtered_usage[cols1].copy()
+
         # Create Table 2: Filtered Specialization (Name, Email, Specialization)
         table2 = None
-        if spec_df is not None and specialization_count > 0:
-            # Filter the spec_df with the same criteria as in specialization.py
+        if spec_df is not None:
             filtered_spec = spec_df.copy()
-            
-            # Apply filters
-            if 'Enrollment Time' in filtered_spec.columns:
-                filtered_spec['Enrollment Time'] = pd.to_datetime(filtered_spec['Enrollment Time'], errors='coerce')
-                
-                # Create cutoff date - start with naive datetime
-                cutoff_date = pd.Timestamp('2025-01-01')
-                
-                # Handle timezone compatibility
-                try:
-                    # First, try the comparison as-is (works if both are naive or both have same timezone)
-                    filtered_spec = filtered_spec[filtered_spec['Enrollment Time'] >= cutoff_date]
-                except TypeError:
-                    # If comparison fails, try to make them compatible
-                    if filtered_spec['Enrollment Time'].dt.tz is not None:
-                        # Data is timezone-aware, make cutoff timezone-aware
-                        cutoff_date = cutoff_date.tz_localize('UTC')
-                    else:
-                        # Data is timezone-naive, ensure cutoff is also naive
-                        cutoff_date = cutoff_date.tz_localize(None) if cutoff_date.tz is not None else cutoff_date
-                    
-                    filtered_spec = filtered_spec[filtered_spec['Enrollment Time'] >= cutoff_date]
-            
+
+            # Map Specialization Completion Time -> Completion Time
+            if 'Specialization Completion Time' in filtered_spec.columns:
+                filtered_spec['Completion Time'] = filtered_spec['Specialization Completion Time']
+
             if 'Completed' in filtered_spec.columns:
                 filtered_spec = filtered_spec[filtered_spec['Completed'] == 'Yes']
-            
-            # Create Table 2 with Name, Email, Specialization
+
+            # Create Table 2 with Name, Email, Course/Specs (with completion date), Last Activity Time
             if len(filtered_spec) > 0:
-                table2 = filtered_spec[['Name', 'Email', 'Specialization']].copy()
-                table2.rename(columns={'Specialization': 'Course/Specs'}, inplace=True)
-        
+                # Build Course/Specs with appended specialization completion date if available
+                if 'Specialization' in filtered_spec.columns:
+                    spec_specs = filtered_spec['Specialization'].astype(str)
+                    # Use unified 'Completion Time'
+                    scomp = pd.to_datetime(filtered_spec.get('Completion Time'), errors='coerce', utc=True)
+                    scomp_str = scomp.dt.strftime('%d/%m/%Y')
+                    scomp_str = scomp_str.where(scomp.notna(), '')
+                    spec_specs = spec_specs + scomp_str.apply(lambda s: f" ({s})" if s else "")
+                    filtered_spec['Course/Specs'] = spec_specs
+                cols2 = [c for c in ['Name', 'Email', 'Course/Specs', 'Completion Time'] if c in filtered_spec.columns]
+                table2 = filtered_spec[cols2].copy()
         # Join Table 1 and Table 2 to create Table 3
         table3 = pd.DataFrame()
-        
+
         if table1 is not None and table2 is not None:
             table3 = pd.concat([table1, table2], ignore_index=True)
         elif table1 is not None:
             table3 = table1.copy()
         elif table2 is not None:
             table3 = table2.copy()
-        
+
         # Display the combined table and analysis
         if not table3.empty:
-            st.subheader("📋 Combined Table (Table 3)")
-            st.write("**Combined data with Name, Email, and Course/Specs:**")
+            st.subheader("Combined Table (Table 3)")
+            st.write("**Combined data with Name, Email, Course/Specs, and Completion Time:**")
             st.dataframe(table3)
-            
-            # Count unique emails
-            unique_emails = table3['Email'].nunique()
-            st.success(f"👥 **Total {unique_emails} unique learners**")
-            
+
+            # Count unique learners with at least one activity in 2025
+            t3 = table3.copy()
+            # Normalize email
+            if 'Email' in t3.columns:
+                t3['Email'] = t3['Email'].astype(str).str.strip().str.lower()
+            # Parse unified Completion Time and compute unique learners per rule:
+            # Eligible if the learner's max Completion Time is on/after 2025-01-01 UTC
+            if 'Completion Time' in t3.columns:
+                t3['Completion Time'] = pd.to_datetime(t3['Completion Time'], errors='coerce', utc=True)
+                cutoff = pd.Timestamp('2025-01-01', tz='UTC')
+                # Compute per-email max Last Activity Time
+                all_emails = t3['Email'].dropna().astype(str).unique().tolist()
+                max_last = (
+                    t3.groupby('Email', dropna=True)['Completion Time']
+                    .max()
+                )
+                # Eligible if max >= cutoff
+                eligible_mask = max_last >= cutoff
+                eligible_emails = set(max_last.index[eligible_mask].tolist())
+                unique_metric = len(eligible_emails)
+                st.success(f"**Total {unique_metric} unique learners (with activity in 2025)**")
+                with st.expander("See included/excluded learners (by email)"):
+                    included_emails = sorted(list(eligible_emails))
+                    excluded_emails = sorted(list(set(all_emails) - eligible_emails))
+                    st.write("Included (>= 1 activity in 2025):", included_emails)
+                    st.write("Excluded (all activities before 2025):", excluded_emails)
+
+                # Inspector for a specific learner
+                with st.expander("Inspect a learner by email"):
+                    default_email = "ngoc.2472104030517@vanlanguni.vn"
+                    inspect_email = st.text_input("Email to inspect", value=default_email, key="inspect_email")
+                    if inspect_email:
+                        df_inspect = t3.loc[t3['Email'] == inspect_email, ['Name', 'Email', 'Course/Specs', 'Completion Time']].copy()
+                        st.write(df_inspect)
+                        max_time = df_inspect['Completion Time'].max()
+                        st.info(f"Max Completion Time: {max_time}")
+                        st.info(f"Eligible (max >= 2025-01-01 UTC): {bool(pd.notna(max_time) and max_time >= cutoff)}")
+            else:
+                # Fallback if Last Activity Time not available
+                unique_metric = t3['Email'].nunique()
+                eligible_emails = None
+                st.success(f"**Total {unique_metric} unique learners** (no activity time available)")
+
+            # Recompute totals based on combined table
+            total_certificates = len(table3)
+
             # Show some additional statistics
-            st.subheader("📈 Additional Statistics")
+            st.subheader("Additional Statistics")
             col1, col2, col3 = st.columns(3)
-            
+
             with col1:
                 st.metric("Total Certificates", total_certificates)
-            
+
             with col2:
-                st.metric("Unique Learners", unique_emails)
-            
-            with col3:
-                if unique_emails > 0:
-                    avg_certs_per_learner = round(total_certificates / unique_emails, 2)
-                    st.metric("Avg Certificates per Learner", avg_certs_per_learner)
-                else:
-                    st.metric("Avg Certificates per Learner", 0)
+                st.metric("Unique Learners (2025)", unique_metric)
+
 
             # Table 4: Name, Email, Total course/spec number (sorted descending by total, grouped by Email)
-            st.subheader("📘 Table 4: Learners by total Course/Specs")
+            st.subheader("Table 4: Learners by total Course/Specs")
             try:
                 # Ensure email is lowercase for grouping consistency
-                t3 = table3.copy()
-                if 'Email' in t3.columns:
-                    t3['Email'] = t3['Email'].astype(str).str.strip().str.lower()
+                t4 = t3.copy()
+                # Toggle to optionally show only 2025-eligible learners
+                filter_only_eligible = st.toggle("Show only learners with activity in 2025", value=True, key="table4_filter_active")
+                if filter_only_eligible and 'eligible_emails' in locals() and (eligible_emails is not None):
+                    t4 = t4[t4['Email'].isin(eligible_emails)]
                 # Derive a representative Name per email: most frequent Name, fallback to first non-null
-                if 'Name' in t3.columns:
+                if 'Name' in t4.columns:
                     name_per_email = (
-                        t3
+                        t4
                         .groupby('Email')['Name']
                         .agg(lambda s: s.mode().iat[0] if not s.mode().empty else s.dropna().iat[0] if not s.dropna().empty else None)
                         .reset_index()
                     )
                 else:
-                    name_per_email = t3[['Email']].drop_duplicates().copy()
+                    name_per_email = t4[['Email']].drop_duplicates().copy()
                     name_per_email['Name'] = None
 
                 counts = (
-                    t3
+                    t4
                     .groupby(["Email"], dropna=False)
                     .size()
                     .reset_index(name="Total course/spec number")
                 )
 
                 # Aggregate list of courses/specs per email (distinct, preserve appearance order)
-                if 'Course/Specs' in t3.columns:
+                if 'Course/Specs' in t4.columns:
                     courses_per_email = (
-                        t3
+                        t4
                         .groupby('Email')['Course/Specs']
                         .agg(lambda s: '\n'.join(list(dict.fromkeys([str(x) for x in s.dropna().tolist()]))))
                         .reset_index()
@@ -186,13 +200,13 @@ def join_and_analyze_tables(usage_df, spec_df, essentials_count, specialization_
                 else:
                     st.dataframe(table4, use_container_width=True)
             except Exception as e:
-                st.warning(f"⚠️ Could not build Table 4: {e}")
-        
+                st.warning(f"Could not build Table 4: {e}")
+
         else:
-            st.warning("⚠️ No data available for combined analysis")
-            
+            st.warning("No data available for combined analysis")
+
     except Exception as e:
-        st.error(f"❌ Error in combined analysis: {str(e)}")
+        st.error(f"Error in combined analysis: {str(e)}")
 
 def main():
     # Page configuration
@@ -203,12 +217,12 @@ def main():
     )
     
     # Main title
-    st.title("📊 GCC File Processor")
+    st.title("GCC File Processor")
     st.markdown("Upload your CSV files to process and analyze the data.")
     # File requirements section
     st.markdown("---")
     st.markdown("""
-    ### 📋 File Requirements:
+    ### File Requirements:
     - **Format:** CSV (Comma-separated values)
     - **Encoding:** UTF-8
     - **Separator:** Comma (,)
@@ -229,7 +243,7 @@ def main():
     col1, col2 = st.columns(2)
     
     with col1:
-        st.header("📈 Step 1A: Usage Report CSV")
+        st.header("Step 1A: Usage Report CSV")
         st.markdown("Upload your GCC Usage Report CSV file")
         
         usage_file = st.file_uploader(
@@ -240,7 +254,7 @@ def main():
         )
         
         if usage_file is not None:
-            st.success("✅ Usage Report CSV uploaded successfully!")
+            st.success("Usage Report CSV uploaded successfully!")
             with st.spinner("Processing GCC Usage Report..."):
                 result = process_gcc_usage_report(usage_file)
                 if result is not None:
@@ -248,7 +262,7 @@ def main():
                     st.session_state.essentials_count = result['count']
     
     with col2:
-        st.header("🎯 Step 1B: Specialization CSV")
+        st.header("Step 1B: Specialization CSV")
         st.markdown("Upload your GCC Specialization CSV file")
         
         spec_file = st.file_uploader(
@@ -259,7 +273,7 @@ def main():
         )
         
         if spec_file is not None:
-            st.success("✅ Specialization CSV uploaded successfully!")
+            st.success("Specialization CSV uploaded successfully!")
             with st.spinner("Processing GCC Specialization file..."):
                 result = process_gcc_specialization_file(spec_file)
                 if result is not None:
@@ -270,9 +284,7 @@ def main():
     if (st.session_state.usage_df is not None or st.session_state.spec_df is not None):
         join_and_analyze_tables(
             st.session_state.usage_df, 
-            st.session_state.spec_df,
-            st.session_state.essentials_count,
-            st.session_state.specialization_count
+            st.session_state.spec_df
         )
     
     
