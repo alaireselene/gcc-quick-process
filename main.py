@@ -27,7 +27,7 @@ def join_and_analyze_tables(usage_df, spec_df):
             if 'Completed' in filtered_usage.columns:
                 filtered_usage = filtered_usage[filtered_usage['Completed'] == 'Yes']
 
-            # Create Table 1 with Name, Email, Course/Specs (with completion date), Last Activity Time
+            # Create Table 1 with Name, Email, Course/Specs (with completion date), Completion Time
             if len(filtered_usage) > 0:
                 # Build Course/Specs with appended completion date if available
                 if 'Course' in filtered_usage.columns:
@@ -54,7 +54,7 @@ def join_and_analyze_tables(usage_df, spec_df):
             if 'Completed' in filtered_spec.columns:
                 filtered_spec = filtered_spec[filtered_spec['Completed'] == 'Yes']
 
-            # Create Table 2 with Name, Email, Course/Specs (with completion date), Last Activity Time
+            # Create Table 2 with Name, Email, Course/Specs (with completion date), Completion Time
             if len(filtered_spec) > 0:
                 # Build Course/Specs with appended specialization completion date if available
                 if 'Specialization' in filtered_spec.columns:
@@ -83,71 +83,52 @@ def join_and_analyze_tables(usage_df, spec_df):
             st.write("**Combined data with Name, Email, Course/Specs, and Completion Time:**")
             st.dataframe(table3)
 
-            # Count unique learners with at least one activity in 2025
+            # Compute metrics and build downstream tables
             t3 = table3.copy()
             # Normalize email
             if 'Email' in t3.columns:
                 t3['Email'] = t3['Email'].astype(str).str.strip().str.lower()
-            # Parse unified Completion Time and compute unique learners per rule:
-            # Eligible if the learner's max Completion Time is on/after 2025-01-01 UTC
-            if 'Completion Time' in t3.columns:
+            # Parse unified Completion Time
+            has_completion = 'Completion Time' in t3.columns
+            if has_completion:
                 t3['Completion Time'] = pd.to_datetime(t3['Completion Time'], errors='coerce', utc=True)
                 cutoff = pd.Timestamp('2025-01-01', tz='UTC')
-                # Compute per-email max Last Activity Time
-                all_emails = t3['Email'].dropna().astype(str).unique().tolist()
-                max_last = (
-                    t3.groupby('Email', dropna=True)['Completion Time']
-                    .max()
-                )
-                # Eligible if max >= cutoff
-                eligible_mask = max_last >= cutoff
-                eligible_emails = set(max_last.index[eligible_mask].tolist())
-                unique_metric = len(eligible_emails)
-                st.success(f"**Total {unique_metric} unique learners (with activity in 2025)**")
-                with st.expander("See included/excluded learners (by email)"):
-                    included_emails = sorted(list(eligible_emails))
-                    excluded_emails = sorted(list(set(all_emails) - eligible_emails))
-                    st.write("Included (>= 1 activity in 2025):", included_emails)
-                    st.write("Excluded (all activities before 2025):", excluded_emails)
+                # 2025-only subset for metrics (1) and (2)
+                t3_2025 = t3.dropna(subset=['Completion Time'])
+                t3_2025 = t3_2025[t3_2025['Completion Time'] >= cutoff]
+                total_2025_certificates = int(len(t3_2025))
+                unique_2025_learners = int(t3_2025['Email'].nunique())
 
-                # Inspector for a specific learner
-                with st.expander("Inspect a learner by email"):
-                    default_email = "ngoc.2472104030517@vanlanguni.vn"
-                    inspect_email = st.text_input("Email to inspect", value=default_email, key="inspect_email")
-                    if inspect_email:
-                        df_inspect = t3.loc[t3['Email'] == inspect_email, ['Name', 'Email', 'Course/Specs', 'Completion Time']].copy()
-                        st.write(df_inspect)
-                        max_time = df_inspect['Completion Time'].max()
-                        st.info(f"Max Completion Time: {max_time}")
-                        st.info(f"Eligible (max >= 2025-01-01 UTC): {bool(pd.notna(max_time) and max_time >= cutoff)}")
+                # Eligible emails for Top Learner List: max completion time >= cutoff on full data
+                max_last = t3.groupby('Email', dropna=True)['Completion Time'].max()
+                eligible_emails = set(max_last.index[(max_last >= cutoff)].tolist())
             else:
-                # Fallback if Last Activity Time not available
-                unique_metric = t3['Email'].nunique()
-                eligible_emails = None
-                st.success(f"**Total {unique_metric} unique learners** (no activity time available)")
+                cutoff = pd.Timestamp('2025-01-01', tz='UTC')
+                t3_2025 = t3.copy()
+                total_2025_certificates = 0
+                unique_2025_learners = int(t3['Email'].nunique())
+                eligible_emails = set(t3['Email'].dropna().unique().tolist())
 
-            # Recompute totals based on combined table
-            total_certificates = len(table3)
+            # Recompute totals based on combined table (no longer used for metrics)
 
             # Show some additional statistics
             st.subheader("Additional Statistics")
-            col1, col2, col3 = st.columns(3)
+            col1, col2 = st.columns(2)
 
             with col1:
-                st.metric("Total Certificates", total_certificates)
+                st.metric("2025 Certificates", total_2025_certificates)
 
             with col2:
-                st.metric("Unique Learners (2025)", unique_metric)
+                st.metric("2025 Unique Learners", unique_2025_learners)
 
 
-            # Table 4: Name, Email, Total course/spec number (sorted descending by total, grouped by Email)
-            st.subheader("Table 4: Learners by total Course/Specs")
+            # Top Learner List: based on full table but only learners whose max Completion Time >= cutoff
+            st.subheader("Top Learner List (2025-eligible)")
             try:
                 # Ensure email is lowercase for grouping consistency
                 t4 = t3.copy()
-                # Toggle to optionally show only 2025-eligible learners
-                filter_only_eligible = st.toggle("Show only learners with activity in 2025", value=True, key="table4_filter_active")
-                if filter_only_eligible and 'eligible_emails' in locals() and (eligible_emails is not None):
+                # Filter to only eligible emails for top list
+                if 'Email' in t4.columns and eligible_emails:
                     t4 = t4[t4['Email'].isin(eligible_emails)]
                 # Derive a representative Name per email: most frequent Name, fallback to first non-null
                 if 'Name' in t4.columns:
@@ -189,7 +170,7 @@ def join_and_analyze_tables(usage_df, spec_df):
                     .sort_values(by="Total course/spec number", ascending=False)
                     .reset_index(drop=True)
                 )
-                st.write("Sorted in decreasing order by total")
+                st.write("Sorted in decreasing order by total (eligible learners only)")
                 # Option to render with wrapped lines (HTML) or as a standard dataframe
                 wrap_view = st.toggle("Wrap Courses/Specs list", value=True, key="wrap_courses_specs_list")
                 if wrap_view:
